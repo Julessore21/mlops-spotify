@@ -18,17 +18,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv pip install --system -r requirements.txt
 
       - name: Download dataset
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
-          pip install kaggle
+          uv pip install --system kaggle
           kaggle datasets download -d nabihazahid/spotify-dataset-for-churn-analysis -p data/raw/ --unzip
 
       - name: Preprocess

@@ -1,5 +1,8 @@
 install:
-	pip install -r requirements.txt
+	uv pip install -r requirements.txt
+
+install-dev:
+	uv pip install -e .
 
 preprocess:
 	python src/preprocess.py
