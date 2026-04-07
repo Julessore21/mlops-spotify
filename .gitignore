@@ -1,0 +1,9 @@
+data/processed/
+models/
+reports/
+mlruns/
+__pycache__/
+*.pyc
+.env
+*.zip
+.ipynb_checkpoints/
