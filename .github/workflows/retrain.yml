@@ -1,0 +1,54 @@
+name: Scheduled Retrain
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"  # every Monday at 2am UTC
+  workflow_dispatch:      # manual trigger for demo purposes
+    inputs:
+      batch:
+        description: "Data batch to use for retraining"
+        required: true
+        default: "val"
+        type: choice
+        options:
+          - val
+          - test
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Download dataset
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          uv pip install --system kaggle
+          kaggle datasets download -d nabihazahid/spotify-dataset-for-churn-analysis -p data/raw/ --unzip
+
+      - name: Preprocess
+        run: python src/preprocess.py
+
+      - name: Retrain with new data
+        run: python src/retrain.py --batch ${{ github.event.inputs.batch || 'val' }}
+
+      - name: Upload retrained model
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrained-model-${{ github.event.inputs.batch || 'val' }}
+          path: models/best_model.pkl
