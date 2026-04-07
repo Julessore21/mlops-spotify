@@ -6,3 +6,5 @@ matplotlib==3.8.4
 seaborn==0.13.2
 jupyter==1.0.0
 joblib==1.4.2
+fastapi==0.111.0
+uvicorn==0.30.1
