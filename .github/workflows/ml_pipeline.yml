@@ -34,6 +34,9 @@ jobs:
           kaggle datasets download -d nabihazahid/spotify-dataset-for-churn-analysis -p data/raw/ --unzip
 
       - name: Preprocess
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
         run: python src/preprocess.py
 
       - name: Train

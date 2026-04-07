@@ -6,6 +6,9 @@ from sklearn.compose import ColumnTransformer
 import joblib
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
 RAW_DATA_PATH = "data/raw/spotify_churn_dataset.csv"
 PROCESSED_DIR = "data/processed"
 TARGET = "ads_listened_per_week"
@@ -27,6 +30,30 @@ def build_preprocessor() -> ColumnTransformer:
     ])
 
 
+def upload_to_azure(local_path: str, blob_name: str):
+    """Upload a file to Azure Blob Storage if connection string is configured."""
+    conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    container = os.getenv("AZURE_CONTAINER_NAME", "mlops-spotify")
+
+    if not conn_str:
+        return  # silently skip if not configured
+
+    try:
+        from azure.storage.blob import BlobServiceClient
+        client = BlobServiceClient.from_connection_string(conn_str)
+        container_client = client.get_container_client(container)
+
+        if not container_client.exists():
+            container_client.create_container()
+
+        with open(local_path, "rb") as f:
+            container_client.upload_blob(name=blob_name, data=f, overwrite=True)
+
+        print(f"  ☁ Uploaded {blob_name} to Azure container '{container}'")
+    except Exception as e:
+        print(f"  ⚠ Azure upload failed for {blob_name}: {e}")
+
+
 def preprocess(random_state: int = 42):
     os.makedirs(PROCESSED_DIR, exist_ok=True)
 
@@ -46,17 +73,18 @@ def preprocess(random_state: int = 42):
     # Fit preprocessor on train only
     preprocessor = build_preprocessor()
     X_train_p = preprocessor.fit_transform(X_train)
-    X_val_p = preprocessor.transform(X_val)
-    X_test_p = preprocessor.transform(X_test)
+    X_val_p   = preprocessor.transform(X_val)
+    X_test_p  = preprocessor.transform(X_test)
 
     # Save as Parquet (raw splits) for traceability
     train_df = X_train.copy(); train_df[TARGET] = y_train.values
     val_df   = X_val.copy();   val_df[TARGET]   = y_val.values
     test_df  = X_test.copy();  test_df[TARGET]  = y_test.values
 
-    train_df.to_parquet(f"{PROCESSED_DIR}/train.parquet", index=False)
-    val_df.to_parquet(f"{PROCESSED_DIR}/val.parquet",     index=False)
-    test_df.to_parquet(f"{PROCESSED_DIR}/test.parquet",   index=False)
+    for name, df_split in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        path = f"{PROCESSED_DIR}/{name}.parquet"
+        df_split.to_parquet(path, index=False)
+        upload_to_azure(path, f"processed/{name}.parquet")
 
     # Save numpy arrays for training
     np.save(f"{PROCESSED_DIR}/X_train.npy", X_train_p)
