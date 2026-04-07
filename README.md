@@ -1,6 +1,6 @@
-# Spotify Listening Time — MLOps Pipeline
+# Spotify Ads Prediction — MLOps Pipeline
 
-Prédiction du temps d'écoute Spotify (`listening_time`) via régression linéaire.  
+Prédiction du nombre de publicités écoutées par semaine (`ads_listened_per_week`) via régression linéaire (R² ≈ 0.76).  
 Projet MLOps Ynov 2025-2026.
 
 ## Stack
@@ -90,13 +90,13 @@ POST /predict
 {
   "gender": "Female",
   "age": 28,
-  "country": "FR",
-  "subscription_type": "Premium",
+  "country": "France",
+  "subscription_type": "Free",
   "songs_played_per_day": 20,
   "skip_rate": 0.15,
   "device_type": "Mobile",
-  "ads_listened_per_week": 0,
-  "offline_listening": 1
+  "listening_time": 120.5,
+  "offline_listening": 0
 }
 ```
 

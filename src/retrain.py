@@ -18,8 +18,8 @@ import os
 
 PROCESSED_DIR = "data/processed"
 MODEL_DIR = "models"
-EXPERIMENT_NAME = "spotify-listening-time-prediction"
-TARGET = "listening_time"
+EXPERIMENT_NAME = "spotify-ads-prediction"
+TARGET = "ads_listened_per_week"
 
 MODELS_GRID = {
     "LinearRegression": {

@@ -9,7 +9,7 @@ import os
 
 PROCESSED_DIR = "data/processed"
 MODEL_DIR = "models"
-EXPERIMENT_NAME = "spotify-listening-time-prediction"
+EXPERIMENT_NAME = "spotify-ads-prediction"
 
 MODELS_GRID = {
     "LinearRegression": {

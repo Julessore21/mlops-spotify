@@ -8,10 +8,10 @@ import os
 
 RAW_DATA_PATH = "data/raw/spotify_churn_dataset.csv"
 PROCESSED_DIR = "data/processed"
-TARGET = "listening_time"
+TARGET = "ads_listened_per_week"
 
 CATEGORICAL_FEATURES = ["gender", "country", "subscription_type", "device_type"]
-NUMERICAL_FEATURES = ["age", "songs_played_per_day", "skip_rate", "ads_listened_per_week", "offline_listening"]
+NUMERICAL_FEATURES = ["age", "songs_played_per_day", "skip_rate", "listening_time", "offline_listening"]
 
 
 def load_data(path: str = RAW_DATA_PATH) -> pd.DataFrame:

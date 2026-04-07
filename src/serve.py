@@ -4,7 +4,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-app = FastAPI(title="Spotify Listening Time Predictor")
+app = FastAPI(title="Spotify Ads Prediction API")
 
 MODEL_PATH = "models/best_model.pkl"
 PREPROCESSOR_PATH = "data/processed/preprocessor.pkl"
@@ -21,13 +21,13 @@ class UserFeatures(BaseModel):
     songs_played_per_day: int
     skip_rate: float
     device_type: str
-    ads_listened_per_week: int
+    listening_time: float
     offline_listening: int
 
 
 @app.get("/")
 def root():
-    return {"message": "Spotify Listening Time Predictor API"}
+    return {"message": "Spotify Ads Prediction API"}
 
 
 @app.post("/predict")
@@ -35,7 +35,7 @@ def predict(features: UserFeatures):
     df = pd.DataFrame([features.model_dump()])
     X = preprocessor.transform(df)
     prediction = model.predict(X)[0]
-    return {"predicted_listening_time": round(float(prediction), 2)}
+    return {"predicted_ads_listened_per_week": round(float(prediction), 2)}
 
 
 @app.get("/health")
