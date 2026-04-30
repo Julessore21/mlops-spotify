@@ -6,15 +6,26 @@ Usage:
     python src/retrain.py --batch test   # use test.parquet as new data
 """
 import argparse
-import numpy as np
-import pandas as pd
+import logging
+import os
+import time
+
+import joblib
 import mlflow
 import mlflow.sklearn
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+import numpy as np
+import pandas as pd
+from mlflow.models.signature import infer_signature
+from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-import joblib
-import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 PROCESSED_DIR = "data/processed"
 MODEL_DIR = "models"
@@ -46,40 +57,40 @@ def compute_metrics(y_true, y_pred) -> dict:
 
 
 def retrain(batch: str = "val"):
-    """
-    Merge original train split with new batch data, retrain all models,
-    save best model and update the API-facing artifact.
-    """
+    """Merge original train split with new batch data, retrain, save best model."""
     assert batch in ("val", "test"), "batch must be 'val' or 'test'"
+
+    t0 = time.time()
+    logger.info("Starting retrain pipeline — new data batch: '%s'", batch)
 
     preprocessor = joblib.load(f"{PROCESSED_DIR}/preprocessor.pkl")
 
-    # Load original train
     X_train = np.load(f"{PROCESSED_DIR}/X_train.npy")
     y_train = np.load(f"{PROCESSED_DIR}/y_train.npy")
+    logger.info("Original train set: %d samples", len(X_train))
 
-    # Load new batch and preprocess
     new_df = pd.read_parquet(f"{PROCESSED_DIR}/{batch}.parquet")
     X_new = preprocessor.transform(new_df.drop(columns=[TARGET]))
     y_new = new_df[TARGET].values
+    logger.info("New batch (%s): %d samples", batch, len(X_new))
 
-    # Merge
     X_combined = np.vstack([X_train, X_new])
     y_combined = np.concatenate([y_train, y_new])
+    logger.info("Combined training set: %d samples", len(X_combined))
 
-    # Evaluate on the other split as held-out test
     held_out = "test" if batch == "val" else "val"
     X_held = np.load(f"{PROCESSED_DIR}/X_{held_out}.npy")
     y_held = np.load(f"{PROCESSED_DIR}/y_{held_out}.npy")
-
-    print(f"\nRetraining on train + {batch} ({len(X_combined)} samples)")
-    print(f"Evaluating on {held_out} ({len(X_held)} samples)\n")
+    logger.info("Held-out evaluation set: '%s' (%d samples)", held_out, len(X_held))
 
     mlflow.set_experiment(EXPERIMENT_NAME)
 
     best_name, best_model, best_r2 = None, None, -float("inf")
 
     for name, config in MODELS_GRID.items():
+        logger.info("Retraining %s...", name)
+        t_model = time.time()
+
         with mlflow.start_run(run_name=f"{name}_retrain_{batch}"):
             mlflow.set_tag("model_type", name)
             mlflow.set_tag("retrain_batch", batch)
@@ -94,9 +105,19 @@ def retrain(batch: str = "val"):
 
             metrics = compute_metrics(y_held, model.predict(X_held))
             mlflow.log_metrics({f"{held_out}_{k}": v for k, v in metrics.items()})
-            mlflow.sklearn.log_model(model, artifact_path=f"{name}_retrain_model")
+            signature = infer_signature(X_combined, model.predict(X_combined))
+            mlflow.sklearn.log_model(
+                model,
+                artifact_path=f"{name}_retrain_model",
+                signature=signature,
+                input_example=X_combined[:3],
+            )
 
-            print(f"  {name} — CV R²: {grid.best_score_:.4f} | {held_out} R²: {metrics['r2']:.4f}")
+            logger.info(
+                "%s — CV R²: %.4f | %s R²: %.4f | params: %s | %.1fs",
+                name, grid.best_score_, held_out, metrics["r2"],
+                grid.best_params_, time.time() - t_model,
+            )
 
             if metrics["r2"] > best_r2:
                 best_r2 = metrics["r2"]
@@ -105,12 +126,18 @@ def retrain(batch: str = "val"):
 
     model_path = f"{MODEL_DIR}/best_model.pkl"
     joblib.dump(best_model, model_path)
-    print(f"\nBest model: {best_name} (R²: {best_r2:.4f}) → saved to {model_path}")
+    logger.info(
+        "Best model: %s (%s R²=%.4f) saved to %s",
+        best_name, held_out, best_r2, model_path,
+    )
+    logger.info("Retrain done in %.1fs — call POST /reload to update the API", time.time() - t0)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch", type=str, default="val", choices=["val", "test"],
-                        help="New data batch to incorporate: 'val' or 'test'")
+    parser.add_argument(
+        "--batch", type=str, default="val", choices=["val", "test"],
+        help="New data batch to incorporate: 'val' or 'test'",
+    )
     args = parser.parse_args()
     retrain(batch=args.batch)

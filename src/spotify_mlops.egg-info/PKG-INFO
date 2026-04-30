@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: spotify_mlops
+Version: 0.1.0
+Summary: MLOps pipeline for Spotify listening time prediction
+Requires-Python: >=3.10
+Requires-Dist: pandas>=2.2.2
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: scikit-learn>=1.4.2
+Requires-Dist: mlflow>=2.13.0
+Requires-Dist: joblib>=1.4.2
+Requires-Dist: fastapi>=0.111.0
+Requires-Dist: uvicorn>=0.30.1
+Requires-Dist: pyarrow>=15.0.0

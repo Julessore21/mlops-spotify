@@ -1,11 +1,22 @@
-import numpy as np
+import logging
+import os
+import time
+
+import joblib
 import mlflow
 import mlflow.sklearn
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+import numpy as np
+from mlflow.models.signature import infer_signature
+from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import joblib
-import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 PROCESSED_DIR = "data/processed"
 MODEL_DIR = "models"
@@ -14,33 +25,27 @@ EXPERIMENT_NAME = "spotify-ads-prediction"
 MODELS_GRID = {
     "LinearRegression": {
         "model": LinearRegression(),
-        "params": {
-            "fit_intercept": [True, False],
-        },
+        "params": {"fit_intercept": [True, False]},
     },
     "Ridge": {
         "model": Ridge(),
-        "params": {
-            "alpha": [0.1, 1.0, 10.0, 100.0],
-            "fit_intercept": [True, False],
-        },
+        "params": {"alpha": [0.1, 1.0, 10.0, 100.0], "fit_intercept": [True, False]},
     },
     "Lasso": {
         "model": Lasso(max_iter=5000),
-        "params": {
-            "alpha": [0.01, 0.1, 1.0, 10.0],
-            "fit_intercept": [True, False],
-        },
+        "params": {"alpha": [0.01, 0.1, 1.0, 10.0], "fit_intercept": [True, False]},
     },
 }
 
 
 def load_processed_data():
+    logger.info("Loading processed data from %s/", PROCESSED_DIR)
     X_train = np.load(f"{PROCESSED_DIR}/X_train.npy")
-    X_test = np.load(f"{PROCESSED_DIR}/X_test.npy")
+    X_val = np.load(f"{PROCESSED_DIR}/X_val.npy")
     y_train = np.load(f"{PROCESSED_DIR}/y_train.npy")
-    y_test = np.load(f"{PROCESSED_DIR}/y_test.npy")
-    return X_train, X_test, y_train, y_test
+    y_val = np.load(f"{PROCESSED_DIR}/y_val.npy")
+    logger.info("Train: %s | Val: %s", X_train.shape, X_val.shape)
+    return X_train, X_val, y_train, y_val
 
 
 def compute_metrics(y_true, y_pred) -> dict:
@@ -51,7 +56,10 @@ def compute_metrics(y_true, y_pred) -> dict:
     }
 
 
-def train_with_gridsearch(name, model, param_grid, X_train, X_test, y_train, y_test):
+def train_with_gridsearch(name, model, param_grid, X_train, X_val, y_train, y_val):
+    logger.info("Training %s with GridSearchCV...", name)
+    t0 = time.time()
+
     with mlflow.start_run(run_name=f"{name}_gridsearch"):
         mlflow.set_tag("model_type", name)
 
@@ -65,33 +73,42 @@ def train_with_gridsearch(name, model, param_grid, X_train, X_test, y_train, y_t
         mlflow.log_metric("cv_best_r2", float(grid.best_score_))
 
         train_metrics = compute_metrics(y_train, best_model.predict(X_train))
-        test_metrics = compute_metrics(y_test, best_model.predict(X_test))
+        val_metrics = compute_metrics(y_val, best_model.predict(X_val))
 
         mlflow.log_metrics({f"train_{k}": v for k, v in train_metrics.items()})
-        mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
+        mlflow.log_metrics({f"val_{k}": v for k, v in val_metrics.items()})
+        signature = infer_signature(X_train, best_model.predict(X_train))
+        mlflow.sklearn.log_model(
+            best_model,
+            artifact_path=f"{name}_best_model",
+            signature=signature,
+            input_example=X_train[:3],
+        )
 
-        mlflow.sklearn.log_model(best_model, artifact_path=f"{name}_best_model")
+        elapsed = time.time() - t0
+        logger.info(
+            "%s — CV R²: %.4f | Val R²: %.4f | Val RMSE: %.4f | params: %s | %.1fs",
+            name, grid.best_score_, val_metrics["r2"], val_metrics["rmse"], best_params, elapsed,
+        )
 
-        print(f"\n=== {name} (GridSearch) ===")
-        print(f"  Best params : {best_params}")
-        print(f"  CV R²       : {grid.best_score_:.4f}")
-        print(f"  Test R²     : {test_metrics['r2']:.4f} | Test RMSE: {test_metrics['rmse']:.4f}")
-
-    return best_model, test_metrics
+    return best_model, val_metrics
 
 
 def train():
+    t0 = time.time()
     os.makedirs(MODEL_DIR, exist_ok=True)
+
+    logger.info("MLflow experiment: '%s'", EXPERIMENT_NAME)
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    X_train, X_test, y_train, y_test = load_processed_data()
+    X_train, X_val, y_train, y_val = load_processed_data()
 
     best_name, best_model, best_r2 = None, None, -float("inf")
 
     for name, config in MODELS_GRID.items():
         trained_model, metrics = train_with_gridsearch(
             name, config["model"], config["params"],
-            X_train, X_test, y_train, y_test
+            X_train, X_val, y_train, y_val,
         )
         if metrics["r2"] > best_r2:
             best_r2 = metrics["r2"]
@@ -100,7 +117,11 @@ def train():
 
     model_path = f"{MODEL_DIR}/best_model.pkl"
     joblib.dump(best_model, model_path)
-    print(f"\nBest model: {best_name} (test R²: {best_r2:.4f}) → saved to {model_path}")
+    logger.info(
+        "Best model: %s (val R²=%.4f) saved to %s",
+        best_name, best_r2, model_path,
+    )
+    logger.info("Training done in %.1fs", time.time() - t0)
 
 
 if __name__ == "__main__":

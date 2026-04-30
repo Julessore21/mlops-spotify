@@ -1,0 +1,7 @@
+README.md
+setup.py
+src/spotify_mlops.egg-info/PKG-INFO
+src/spotify_mlops.egg-info/SOURCES.txt
+src/spotify_mlops.egg-info/dependency_links.txt
+src/spotify_mlops.egg-info/requires.txt
+src/spotify_mlops.egg-info/top_level.txt
